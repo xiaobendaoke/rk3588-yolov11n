@@ -1,26 +1,35 @@
 #!/bin/bash
-# build.sh - 在 RK3588 板子上编译推理库
+# build.sh - 编译C++推理库
+# 用法: ./build.sh [clean]
+
 set -e
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-BUILD_DIR="${SCRIPT_DIR}/build"
-LIBS_DIR="${SCRIPT_DIR}/libs/rknn_api"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
 
-mkdir -p "${BUILD_DIR}"
+BUILD_DIR="build"
 
-# 检查 RKNN API 是否存在
-if [ ! -d "${LIBS_DIR}/include" ]; then
-    echo "RKNN API not found at ${LIBS_DIR}"
-    echo "Trying system paths..."
+# 清理
+if [ "$1" = "clean" ]; then
+    echo "Cleaning build directory..."
+    rm -rf "$BUILD_DIR"
 fi
 
-cd "${BUILD_DIR}"
-cmake .. -DCMAKE_BUILD_TYPE=Release \
-         -DRKNN_API_DIR="${LIBS_DIR}"
+# 创建build目录
+mkdir -p "$BUILD_DIR"
+cd "$BUILD_DIR"
 
+# 运行cmake
+echo "Running cmake..."
+cmake .. -DCMAKE_BUILD_TYPE=Release
+
+# 编译
+echo "Building..."
 make -j$(nproc)
 
 echo ""
-echo "Build complete!"
-echo "Library: ${BUILD_DIR}/librknn_infer.so"
-ls -lh "${BUILD_DIR}/librknn_infer.so"
+echo "Build completed!"
+echo "Library: $SCRIPT_DIR/$BUILD_DIR/librknn_infer.so"
+echo ""
+echo "To install to /opt/desk-safety/native:"
+echo "  sudo cp $SCRIPT_DIR/$BUILD_DIR/librknn_infer.so /opt/desk-safety/native/"

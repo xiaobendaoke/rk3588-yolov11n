@@ -13,9 +13,11 @@ import numpy as np
 import uvicorn
 
 from app.capture.camera import CameraCapture
+from app.capture.v4l2_camera import NativeV4l2Camera, create_camera
 from app.config import load_settings
 from app.infer.engine import InferenceEngine
 from app.infer.native_engine import NativeInferenceEngine
+from app.pipeline.buffer import DoubleBuffer
 from app.rules.engine import RuleConfig, RuleEngine
 from app.storage.events import EventStore
 from app.web.server import AppState, annotate_frame, create_app
@@ -181,7 +183,7 @@ def save_snapshot(snapshot_root: str, frame) -> str:
 
 
 def infer_loop(
-    camera: CameraCapture,
+    camera,
     infer,
     rules: RuleEngine,
     state: AppState,
@@ -203,10 +205,173 @@ def infer_loop(
         store: 用于持久化风险事件的事件存储。
         log: 日志记录器实例。
     """
-    if isinstance(infer, NativeInferenceEngine) and infer._pool is not None:
+    if settings.pipeline_enabled:
+        _infer_loop_pipeline(camera, infer, rules, state, settings, store, log)
+    elif isinstance(infer, NativeInferenceEngine) and infer._pool is not None:
         _infer_loop_native(camera, infer, rules, state, settings, store, log)
     else:
         _infer_loop_standard(camera, infer, rules, state, settings, store, log)
+
+
+def _infer_loop_pipeline(
+    camera,
+    infer,
+    rules: RuleEngine,
+    state: AppState,
+    settings,
+    store: EventStore,
+    log: logging.Logger,
+) -> None:
+    """流水线推理循环：摄像头捕获和推理并行。
+    
+    使用双缓冲实现摄像头捕获和推理的并行执行：
+    - 摄像头线程持续读取帧
+    - 推理线程处理最新帧
+    - 编码线程处理推理结果
+    """
+    # 初始化双缓冲
+    if settings.camera_crop_left:
+        frame_shape = (settings.camera_height, settings.camera_width // 2, 3)
+    else:
+        frame_shape = (settings.camera_height, settings.camera_width, 3)
+    
+    buffer = DoubleBuffer(frame_shape)
+    
+    # 推理结果
+    result_lock = threading.Lock()
+    result_data = {
+        "detections": [],
+        "risks": [],
+        "annotated": None,
+    }
+    
+    # 统计
+    stats = {
+        "frames": 0,
+        "last_time": time.time(),
+        "fps": 0.0,
+    }
+    
+    # 摄像头捕获线程
+    def capture_worker():
+        log.info("Capture worker started")
+        while True:
+            try:
+                frame = camera.read()
+                if frame is None:
+                    time.sleep(0.01)
+                    continue
+                
+                # 写入双缓冲
+                idx, write_buf = buffer.get_write_buffer()
+                np.copyto(write_buf, frame)
+                buffer.commit_write()
+                
+            except Exception as e:
+                log.error("Capture error: %s", e)
+                time.sleep(0.1)
+    
+    # 推理线程
+    def infer_worker():
+        log.info("Inference worker started")
+        while True:
+            try:
+                # 从双缓冲读取
+                frame = buffer.get_read_buffer()
+                
+                # 推理
+                detections, model_frame = infer.infer(frame)
+                
+                # 规则评估
+                risks = rules.evaluate(detections)
+                
+                # 标注
+                annotated = annotate_frame(model_frame.copy(), detections, risks)
+                
+                # 更新结果
+                with result_lock:
+                    result_data["detections"] = detections
+                    result_data["risks"] = risks
+                    result_data["annotated"] = annotated
+                
+                # 处理风险事件
+                for risk in risks:
+                    snapshot_path = save_snapshot(settings.snapshot_root, annotated)
+                    event_id = store.insert_event(risk, snapshot_path)
+                    with state.lock:
+                        state.status.last_event_time = datetime.now().isoformat(timespec="seconds")
+                    log.warning("event id=%s type=%s severity=%s", event_id, risk.risk_type, risk.severity)
+                
+            except Exception as e:
+                log.error("Inference error: %s", e)
+                time.sleep(0.1)
+    
+    # 编码和状态更新线程
+    def encode_worker():
+        log.info("Encode worker started")
+        last = time.time()
+        frames = 0
+        
+        while True:
+            try:
+                with result_lock:
+                    annotated = result_data["annotated"]
+                    detections = result_data["detections"]
+                    risks = result_data["risks"]
+                
+                if annotated is not None:
+                    # JPEG编码
+                    ok, jpg = cv2.imencode(".jpg", annotated, [cv2.IMWRITE_JPEG_QUALITY, 70])
+                    if ok:
+                        with state.lock:
+                            state.latest_jpeg = jpg.tobytes()
+                            state.status.queue_size = 0
+                            state.status.npu_load = read_npu_load()
+                            state.status.gpu_load = read_gpu_load()
+                            state.status.detection_count = len(detections)
+                
+                # 计算FPS
+                frames += 1
+                now = time.time()
+                if now - last >= 1.0:
+                    fps = frames / (now - last)
+                    with state.lock:
+                        state.status.fps = fps
+                        state.status.cpu_percent = read_cpu_percent()
+                        state.status.mem_percent = read_mem_percent()
+                        state.status.cpu_temp = read_thermal("thermal_zone0")
+                        state.status.gpu_temp = read_thermal("thermal_zone1")
+                    
+                    # 获取双缓冲统计
+                    buf_stats = buffer.get_stats()
+                    log.info("fps=%.2f detections=%d risks=%d drop_rate=%.1f%%",
+                             fps, len(detections), len(risks), buf_stats["drop_rate"])
+                    frames = 0
+                    last = now
+                
+                time.sleep(0.01)  # 10ms
+                
+            except Exception as e:
+                log.error("Encode error: %s", e)
+                time.sleep(0.1)
+    
+    # 启动线程
+    capture_thread = threading.Thread(target=capture_worker, daemon=True, name="capture")
+    infer_thread = threading.Thread(target=infer_worker, daemon=True, name="infer")
+    encode_thread = threading.Thread(target=encode_worker, daemon=True, name="encode")
+    
+    capture_thread.start()
+    infer_thread.start()
+    encode_thread.start()
+    
+    log.info("Pipeline started with 3 threads")
+    
+    # 主线程保持运行
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        log.info("Pipeline stopped")
 
 
 def _infer_loop_native(
@@ -356,7 +521,21 @@ def run_pipeline(args: argparse.Namespace) -> None:
     store = EventStore(settings.db_path)
     store.init_schema()
 
-    camera = CameraCapture(settings.camera_device, settings.camera_width, settings.camera_height, settings.camera_crop_left)
+    # 创建摄像头
+    if settings.use_v4l2:
+        camera = NativeV4l2Camera(
+            settings.camera_device,
+            settings.camera_width,
+            settings.camera_height,
+            settings.camera_crop_left
+        )
+    else:
+        camera = CameraCapture(
+            settings.camera_device,
+            settings.camera_width,
+            settings.camera_height,
+            settings.camera_crop_left
+        )
 
     if settings.use_native:
         infer = NativeInferenceEngine(

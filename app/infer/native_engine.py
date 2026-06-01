@@ -46,6 +46,7 @@ class NativeInferenceEngine:
         input_size: int = 640,
         n_workers: int = 3,
         num_classes: int | None = None,
+        use_yolo11: bool = True,
     ) -> None:
         self.model_path = model_path
         self.class_names = list(class_names)
@@ -54,6 +55,7 @@ class NativeInferenceEngine:
         self.input_size = input_size
         self.n_workers = n_workers
         self.num_classes = num_classes if num_classes is not None else len(class_names)
+        self.use_yolo11 = use_yolo11
         self._engine = None
         self._lib = None
         self._stub_mode = False
@@ -69,6 +71,7 @@ class NativeInferenceEngine:
 
         self._lib = ctypes.CDLL(lib_path)
 
+        # 原有接口
         self._lib.rknn_engine_create.restype = ctypes.c_void_p
         self._lib.rknn_engine_create.argtypes = [
             ctypes.c_char_p, ctypes.c_int, ctypes.c_float, ctypes.c_float,
@@ -77,6 +80,14 @@ class NativeInferenceEngine:
 
         self._lib.rknn_engine_infer.restype = ctypes.c_int
         self._lib.rknn_engine_infer.argtypes = [
+            ctypes.c_void_p, ctypes.POINTER(ctypes.c_uint8),
+            ctypes.c_int, ctypes.c_int,
+            ctypes.POINTER(C_DetectionResult)
+        ]
+
+        # YOLO11接口
+        self._lib.rknn_engine_infer_yolo11.restype = ctypes.c_int
+        self._lib.rknn_engine_infer_yolo11.argtypes = [
             ctypes.c_void_p, ctypes.POINTER(ctypes.c_uint8),
             ctypes.c_int, ctypes.c_int,
             ctypes.POINTER(C_DetectionResult)
@@ -106,6 +117,7 @@ class NativeInferenceEngine:
             Path("/opt/desk-safety/native/librknn_infer.so"),
             Path(__file__).parent.parent.parent / "native" / "librknn_infer.so",
             Path("native/librknn_infer.so"),
+            Path("native/build/librknn_infer.so"),
         ]
         for p in candidates:
             if p.exists():
@@ -142,10 +154,17 @@ class NativeInferenceEngine:
         ptr = resized.ctypes.data_as(ctypes.POINTER(ctypes.c_uint8))
         result = C_DetectionResult()
 
-        ret = self._lib.rknn_engine_infer(
-            self._engine, ptr, self.input_size, self.input_size,
-            ctypes.byref(result)
-        )
+        # 根据配置选择推理接口
+        if self.use_yolo11:
+            ret = self._lib.rknn_engine_infer_yolo11(
+                self._engine, ptr, self.input_size, self.input_size,
+                ctypes.byref(result)
+            )
+        else:
+            ret = self._lib.rknn_engine_infer(
+                self._engine, ptr, self.input_size, self.input_size,
+                ctypes.byref(result)
+            )
 
         ts_ms = int(time.time() * 1000)
         dets = []

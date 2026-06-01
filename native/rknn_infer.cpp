@@ -1,7 +1,7 @@
 /**
  * rknn_infer.cpp - RKNN YOLO11 推理库 (多线程版)
  *
- * 支持多 NPU 核心并行推理
+ * 支持多 NPU 核心并行推理，支持YOLO11格式后处理
  */
 
 #include "rknn_infer.h"
@@ -324,6 +324,311 @@ int rknn_engine_infer(void* engine, const uint8_t* img_data,
             float jh = filter_boxes[jdx * 4 + 3];
 
             if (calc_iou(x1, y1, x1 + w_val, y1 + h_val, jx1, jy1, jx1 + jw, jy1 + jh) > eng->nms_threshold)
+                suppressed[jdx] = true;
+        }
+    }
+
+    result->count = out_count;
+    return 0;
+}
+
+// ============ YOLO11专用推理接口 ============
+
+/**
+ * YOLO11后处理：解码单个尺度的输出
+ */
+static void decode_yolo11_scale(
+    const float* box_data,      // [1, 64, H, W] 边界框
+    const float* score_data,    // [1, num_classes, H, W] 类别分数
+    int dfl_len,                // DFL长度 (16)
+    int grid_h,                 // 网格高度
+    int grid_w,                 // 网格宽度
+    int stride,                 // 步长
+    int grid_len,               // grid_h * grid_w
+    int num_classes,            // 类别数
+    float conf_threshold,       // 置信度阈值
+    std::vector<float>& out_boxes_x,
+    std::vector<float>& out_boxes_y,
+    std::vector<float>& out_boxes_w,
+    std::vector<float>& out_boxes_h,
+    std::vector<float>& out_scores,
+    std::vector<int>& out_classes
+) {
+    // 遍历每个网格位置
+    for (int y = 0; y < grid_h; y++) {
+        for (int x = 0; x < grid_w; x++) {
+            int offset = y * grid_w + x;
+
+            // 找最大类别分数
+            int max_class_id = -1;
+            float max_score = 0;
+
+            for (int c = 0; c < num_classes; c++) {
+                // YOLO11输出格式: [1, num_classes, H, W]
+                // 访问: score_data[c * grid_len + offset]
+                float s = score_data[c * grid_len + offset];
+                if (s > max_score) {
+                    max_score = s;
+                    max_class_id = c;
+                }
+            }
+
+            // 置信度过滤
+            if (max_score < conf_threshold) continue;
+
+            // DFL解码边界框
+            // YOLO11输出格式: [1, 64, H, W]
+            // 每16个通道对应一个边界框值
+            float box[4];
+            for (int b = 0; b < 4; b++) {
+                float exp_t[16];
+                float exp_sum = 0;
+                float acc_sum = 0;
+
+                for (int i = 0; i < dfl_len; i++) {
+                    // 访问: box_data[(b * dfl_len + i) * grid_len + offset]
+                    exp_t[i] = expf(box_data[(b * dfl_len + i) * grid_len + offset]);
+                    exp_sum += exp_t[i];
+                }
+
+                for (int i = 0; i < dfl_len; i++) {
+                    acc_sum += (exp_t[i] / exp_sum) * i;
+                }
+
+                box[b] = acc_sum;
+            }
+
+            // 坐标转换
+            float x1 = (x + 0.5f - box[0]) * stride;
+            float y1 = (y + 0.5f - box[1]) * stride;
+            float x2 = (x + 0.5f + box[2]) * stride;
+            float y2 = (y + 0.5f + box[3]) * stride;
+
+            // 存储结果
+            out_boxes_x.push_back(x1);
+            out_boxes_y.push_back(y1);
+            out_boxes_w.push_back(x2 - x1);
+            out_boxes_h.push_back(y2 - y1);
+            out_scores.push_back(max_score);
+            out_classes.push_back(max_class_id);
+        }
+    }
+}
+
+int rknn_engine_infer_yolo11(void* engine, const uint8_t* img_data,
+                              int img_width, int img_height,
+                              DetectionResult* result) {
+    if (!engine || !img_data || !result) return -1;
+
+    RknnEngine* eng = (RknnEngine*)engine;
+    result->count = 0;
+
+    // 选择worker (轮询)
+    int idx = eng->next_idx.fetch_add(1) % eng->workers.size();
+    Worker* w = &eng->workers[idx];
+
+    int in_size = eng->input_size;
+
+    // 设置输入
+    rknn_input inputs[1];
+    memset(inputs, 0, sizeof(inputs));
+    inputs[0].index = 0;
+    inputs[0].type = RKNN_TENSOR_UINT8;
+    inputs[0].size = in_size * in_size * 3;
+    inputs[0].fmt = RKNN_TENSOR_NHWC;
+    inputs[0].buf = (void*)img_data;
+    inputs[0].pass_through = 0;
+
+    int ret = rknn_inputs_set(w->ctx, 1, inputs);
+    if (ret < 0) return -1;
+
+    // 执行推理
+    ret = rknn_run(w->ctx, NULL);
+    if (ret < 0) return -1;
+
+    // 获取输出（保持浮点格式）
+    for (int i = 0; i < w->n_outputs; i++) {
+        w->outputs[i].want_float = 1;
+    }
+    ret = rknn_outputs_get(w->ctx, w->n_outputs, w->outputs, NULL);
+    if (ret < 0) return -1;
+
+    // 检查输出格式
+    // YOLOv8格式: 1个输出, shape=(1, num_classes+4, num_anchors)
+    // YOLO11格式: 9个输出 (3 scales x 3 tensors)
+
+    if (w->n_outputs == 1) {
+        // YOLOv8格式
+        float* output_data = (float*)w->outputs[0].buf;
+        int channels = w->output_attrs[0].dims[1];  // num_classes + 4
+        int num_anchors = w->output_attrs[0].dims[2];  // 8400
+
+        std::vector<float> all_boxes_x, all_boxes_y, all_boxes_w, all_boxes_h;
+        std::vector<float> all_scores;
+        std::vector<int> all_classes;
+
+        for (int i = 0; i < num_anchors; i++) {
+            // 找最大类别分数
+            int max_class_id = -1;
+            float max_score = 0;
+
+            for (int c = 4; c < channels; c++) {
+                float s = output_data[c * num_anchors + i];
+                if (s > max_score) {
+                    max_score = s;
+                    max_class_id = c - 4;
+                }
+            }
+
+            // 置信度过滤
+            if (max_score < eng->conf_threshold) continue;
+
+            // 获取边界框坐标 (cx, cy, w, h)
+            float cx = output_data[0 * num_anchors + i];
+            float cy = output_data[1 * num_anchors + i];
+            float w_val = output_data[2 * num_anchors + i];
+            float h_val = output_data[3 * num_anchors + i];
+
+            // 转换为xyxy格式
+            float x1 = cx - w_val / 2;
+            float y1 = cy - h_val / 2;
+
+            all_boxes_x.push_back(x1);
+            all_boxes_y.push_back(y1);
+            all_boxes_w.push_back(w_val);
+            all_boxes_h.push_back(h_val);
+            all_scores.push_back(max_score);
+            all_classes.push_back(max_class_id);
+        }
+
+        rknn_outputs_release(w->ctx, w->n_outputs, w->outputs);
+
+        // NMS
+        int valid_count = (int)all_scores.size();
+        if (valid_count == 0) return 0;
+
+        // 排序
+        std::vector<int> sorted_idx(valid_count);
+        for (int i = 0; i < valid_count; i++) sorted_idx[i] = i;
+        std::sort(sorted_idx.begin(), sorted_idx.end(), [&](int a, int b) {
+            return all_scores[a] > all_scores[b];
+        });
+
+        std::vector<bool> suppressed(valid_count, false);
+        int out_count = 0;
+
+        for (int i = 0; i < valid_count && out_count < MAX_DETECTIONS; i++) {
+            int idx = sorted_idx[i];
+            if (suppressed[idx]) continue;
+
+            float x1 = all_boxes_x[idx];
+            float y1 = all_boxes_y[idx];
+            float w = all_boxes_w[idx];
+            float h = all_boxes_h[idx];
+
+            result->dets[out_count].class_id = all_classes[idx];
+            result->dets[out_count].confidence = all_scores[idx];
+            result->dets[out_count].x1 = clamp_i((int)x1, 0, in_size - 1);
+            result->dets[out_count].y1 = clamp_i((int)y1, 0, in_size - 1);
+            result->dets[out_count].x2 = clamp_i((int)(x1 + w), 0, in_size - 1);
+            result->dets[out_count].y2 = clamp_i((int)(y1 + h), 0, in_size - 1);
+            out_count++;
+
+            // 抑制重叠框
+            for (int j = i + 1; j < valid_count; j++) {
+                int jdx = sorted_idx[j];
+                if (suppressed[jdx] || all_classes[jdx] != all_classes[idx]) continue;
+
+                float jx1 = all_boxes_x[jdx];
+                float jy1 = all_boxes_y[jdx];
+                float jw = all_boxes_w[jdx];
+                float jh = all_boxes_h[jdx];
+
+                if (calc_iou(x1, y1, x1 + w, y1 + h,
+                            jx1, jy1, jx1 + jw, jy1 + jh) > eng->nms_threshold)
+                    suppressed[jdx] = true;
+            }
+        }
+
+        result->count = out_count;
+        return 0;
+    }
+
+    // YOLO11格式 (9个输出)
+    std::vector<float> all_boxes_x, all_boxes_y, all_boxes_w, all_boxes_h;
+    std::vector<float> all_scores;
+    std::vector<int> all_classes;
+
+    int output_per_branch = w->n_outputs / 3;
+
+    for (int branch = 0; branch < 3; branch++) {
+        int box_idx = branch * output_per_branch;
+        int score_idx = branch * output_per_branch + 1;
+
+        int dfl_len = w->output_attrs[box_idx].dims[1] / 4;  // 16
+        int grid_h = w->output_attrs[box_idx].dims[2];
+        int grid_w = w->output_attrs[box_idx].dims[3];
+        int stride = in_size / grid_h;
+        int grid_len = grid_h * grid_w;
+
+        float* box_data = (float*)w->outputs[box_idx].buf;
+        float* score_data = (float*)w->outputs[score_idx].buf;
+
+        // 解码单个尺度
+        decode_yolo11_scale(
+            box_data, score_data,
+            dfl_len, grid_h, grid_w, stride, grid_len,
+            eng->num_classes, eng->conf_threshold,
+            all_boxes_x, all_boxes_y, all_boxes_w, all_boxes_h,
+            all_scores, all_classes
+        );
+    }
+
+    rknn_outputs_release(w->ctx, w->n_outputs, w->outputs);
+
+    // NMS
+    int valid_count = (int)all_scores.size();
+    if (valid_count == 0) return 0;
+
+    // 排序
+    std::vector<int> sorted_idx(valid_count);
+    for (int i = 0; i < valid_count; i++) sorted_idx[i] = i;
+    std::sort(sorted_idx.begin(), sorted_idx.end(), [&](int a, int b) {
+        return all_scores[a] > all_scores[b];
+    });
+
+    std::vector<bool> suppressed(valid_count, false);
+    int out_count = 0;
+
+    for (int i = 0; i < valid_count && out_count < MAX_DETECTIONS; i++) {
+        int idx = sorted_idx[i];
+        if (suppressed[idx]) continue;
+
+        float x1 = all_boxes_x[idx];
+        float y1 = all_boxes_y[idx];
+        float w_val = all_boxes_w[idx];
+        float h_val = all_boxes_h[idx];
+
+        result->dets[out_count].class_id = all_classes[idx];
+        result->dets[out_count].confidence = all_scores[idx];
+        result->dets[out_count].x1 = clamp_i((int)x1, 0, in_size - 1);
+        result->dets[out_count].y1 = clamp_i((int)y1, 0, in_size - 1);
+        result->dets[out_count].x2 = clamp_i((int)(x1 + w_val), 0, in_size - 1);
+        result->dets[out_count].y2 = clamp_i((int)(y1 + h_val), 0, in_size - 1);
+        out_count++;
+
+        // 抑制重叠框
+        for (int j = i + 1; j < valid_count; j++) {
+            int jdx = sorted_idx[j];
+            if (suppressed[jdx] || all_classes[jdx] != all_classes[idx]) continue;
+
+            float jx1 = all_boxes_x[jdx];
+            float jy1 = all_boxes_y[jdx];
+            float jw = all_boxes_w[jdx];
+            float jh = all_boxes_h[jdx];
+
+            if (calc_iou(x1, y1, x1 + w_val, y1 + h_val,
+                        jx1, jy1, jx1 + jw, jy1 + jh) > eng->nms_threshold)
                 suppressed[jdx] = true;
         }
     }

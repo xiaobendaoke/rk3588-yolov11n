@@ -60,6 +60,8 @@ class Settings:
     web_port: int
     npu_threads: int
     use_native: bool
+    use_v4l2: bool
+    pipeline_enabled: bool
 
 
 def load_settings(config_path: str) -> Settings:
@@ -100,4 +102,6 @@ def load_settings(config_path: str) -> Settings:
         web_port=int(raw.get("web_port", 8080)),
         npu_threads=int(raw.get("npu_threads", 1)),
         use_native=bool(raw.get("use_native", False)),
+        use_v4l2=bool(raw.get("use_v4l2", False)),
+        pipeline_enabled=bool(raw.get("pipeline_enabled", False)),
     )
