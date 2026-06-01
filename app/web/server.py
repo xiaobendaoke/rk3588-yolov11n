@@ -15,11 +15,10 @@ from app.types import RuntimeStatus
 class AppState:
     """推理循环和 Web 服务器之间的共享状态。
 
-    存储最新帧、其 JPEG 编码和运行时状态，通过锁保护实现线程安全访问。
+    存储最新帧的 JPEG 编码和运行时状态，通过锁保护实现线程安全访问。
 
     Attributes:
         lock: 用于同步帧和状态访问的线程锁。
-        latest_frame: 最新的原始帧（numpy 数组或 None）。
         latest_jpeg: 最新帧编码为 JPEG 字节。
         status: 当前运行时状态快照。
     """
@@ -27,7 +26,6 @@ class AppState:
     def __init__(self) -> None:
         """初始化共享应用状态。"""
         self.lock = threading.Lock()
-        self.latest_frame = None
         self.latest_jpeg = b""
         self.status = RuntimeStatus()
 
