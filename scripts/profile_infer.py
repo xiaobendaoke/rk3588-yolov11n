@@ -14,7 +14,7 @@ from rknnlite.api import RKNNLite
 
 def main():
     cfg = load_settings("./configs/config_yolo11m.yaml")
-    cam = CameraCapture(cfg.camera_device, cfg.camera_width, cfg.camera_height)
+    cam = CameraCapture(cfg.camera_device, cfg.camera_width, cfg.camera_height, cfg.camera_crop_left)
     cam.open()
 
     rknn = RKNNLite()

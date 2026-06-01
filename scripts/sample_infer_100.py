@@ -48,7 +48,7 @@ def main() -> int:
     """
     args = parse_args()
     cfg = load_settings(args.config)
-    cam = CameraCapture(cfg.camera_device, cfg.camera_width, cfg.camera_height)
+    cam = CameraCapture(cfg.camera_device, cfg.camera_width, cfg.camera_height, cfg.camera_crop_left)
     infer = InferenceEngine(
         cfg.model_path,
         cfg.class_names,
