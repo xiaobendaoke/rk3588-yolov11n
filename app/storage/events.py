@@ -178,4 +178,5 @@ def _to_iso(ts_ms: int) -> str:
     Returns:
         精确到秒的 ISO-8601 格式字符串。
     """
-    return datetime.fromtimestamp(ts_ms / 1000.0).isoformat(timespec="seconds")
+    from datetime import timezone
+    return datetime.fromtimestamp(ts_ms / 1000.0, tz=timezone.utc).isoformat(timespec="seconds")
