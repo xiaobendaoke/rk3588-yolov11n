@@ -1,0 +1,17 @@
+[Unit]
+Description=Desk Safety Monitor Service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/desk-safety
+ExecStart=/usr/bin/python3 -m app.main --config /opt/desk-safety/configs/config.yaml
+Restart=always
+RestartSec=2
+StandardOutput=append:/opt/desk-safety/logs/service.log
+StandardError=append:/opt/desk-safety/logs/service.err.log
+
+[Install]
+WantedBy=multi-user.target

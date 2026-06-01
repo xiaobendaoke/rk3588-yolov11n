@@ -17,7 +17,6 @@ wheelhouse/
 configs/config.yaml
 
 # 环境特定文件
-systemd/
 
 # 虚拟环境
 .venv/
