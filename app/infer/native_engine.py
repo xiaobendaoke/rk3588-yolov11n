@@ -46,7 +46,7 @@ class NativeInferenceEngine:
         nms_threshold: float = 0.45,
         input_size: int = 640,
         n_workers: int = 3,
-        num_classes: int = 80,
+        num_classes: int | None = None,
     ) -> None:
         self.model_path = model_path
         self.class_names = list(class_names)
@@ -54,7 +54,7 @@ class NativeInferenceEngine:
         self.nms_threshold = nms_threshold
         self.input_size = input_size
         self.n_workers = n_workers
-        self.num_classes = num_classes
+        self.num_classes = num_classes if num_classes is not None else len(class_names)
         self._engine = None
         self._lib = None
         self._stub_mode = False

@@ -135,6 +135,11 @@ static int init_worker(Worker* w, unsigned char* model_data, int model_size, int
 void* rknn_engine_create(const char* model_path, int input_size,
                           float conf_threshold, float nms_threshold,
                           int num_classes) {
+    if (num_classes <= 0 || num_classes > 1024) {
+        fprintf(stderr, "Invalid num_classes: %d\n", num_classes);
+        return NULL;
+    }
+
     RknnEngine* eng = new RknnEngine();
     eng->input_size = input_size;
     eng->num_classes = num_classes;
