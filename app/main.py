@@ -203,8 +203,6 @@ def infer_loop(
         store: 用于持久化风险事件的事件存储。
         log: 日志记录器实例。
     """
-    from app.infer.native_engine import NativeInferenceEngine
-
     if isinstance(infer, NativeInferenceEngine) and infer._pool is not None:
         _infer_loop_native(camera, infer, rules, state, settings, store, log)
     else:
