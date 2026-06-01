@@ -9,6 +9,7 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 import cv2
+import numpy as np
 import uvicorn
 
 from app.capture.camera import CameraCapture
