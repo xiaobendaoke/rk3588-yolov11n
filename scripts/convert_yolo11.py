@@ -67,6 +67,7 @@ def main() -> int:
     downloads = Path.home() / "下载"
 
     tasks = [
+        (str(models_dir / "yolo11n_desk_v4.onnx"), str(models_dir / "yolo11n_desk_v4.rknn")),
         (str(downloads / "yolo11s.onnx"), str(models_dir / "yolo11s.rknn")),
         (str(downloads / "yolo11m.onnx"), str(models_dir / "yolo11m.rknn")),
     ]
