@@ -518,7 +518,7 @@ git commit -m "fix: remove systemd/ from .gitignore to track service files"
 **Files:**
 - Modify: `app/web/server.py:29`
 
-- [ ] **Step 1: 删除未使用的 latest_frame 字段**
+- [x] **Step 1: 删除未使用的 latest_frame 字段**
 
 在 `app/web/server.py` 的 `AppState` 类中删除：
 
@@ -527,7 +527,7 @@ git commit -m "fix: remove systemd/ from .gitignore to track service files"
 self.latest_frame = None
 ```
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 ```bash
 git add app/web/server.py

@@ -13,7 +13,7 @@ def _engine() -> InferenceEngine:
     """
     return InferenceEngine(
         model_path="./models/detector.rknn",
-        class_names=["cup", "phone", "keyboard", "scissors"],
+        class_names=["cup", "cell phone", "keyboard", "scissors"],
         conf_threshold=0.35,
         nms_threshold=0.45,
         input_size=640,
@@ -61,7 +61,7 @@ def test_decode_yolo_with_obj_and_logit_scores():
     )
     dets = eng._decode([out], 2)
     _assert_valid(dets)
-    assert any(d.class_name == "phone" for d in dets)
+    assert any(d.class_name == "cell phone" for d in dets)
 
 
 def test_decode_split_outputs_boxes_and_classes():

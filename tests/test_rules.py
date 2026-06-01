@@ -14,7 +14,7 @@ def _d(ts, cls, conf, box):
     Returns:
         Detection 实例。
     """
-    names = ["cup", "phone", "keyboard", "scissors"]
+    names = ["cup", "cell phone", "keyboard", "scissors"]
     return Detection(ts_ms=ts, class_id=cls, class_name=names[cls], conf=conf, bbox_xyxy=box)
 
 

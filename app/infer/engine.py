@@ -116,7 +116,7 @@ class InferenceEngine:
                 Detection(
                     ts_ms=ts_ms,
                     class_id=1,
-                    class_name="phone",
+                    class_name="cell phone",
                     conf=0.76,
                     bbox_xyxy=(int(0.31 * w), int(0.32 * h), int(0.43 * w), int(0.56 * h)),
                 ),
