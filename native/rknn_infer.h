@@ -14,7 +14,6 @@ extern "C" {
 #endif
 
 #define MAX_DETECTIONS 128
-#define NUM_CLASSES 80
 
 typedef struct {
     int class_id;
@@ -32,7 +31,8 @@ typedef struct {
  * @return 引擎句柄，失败返回 NULL
  */
 void* rknn_engine_create(const char* model_path, int input_size,
-                          float conf_threshold, float nms_threshold);
+                          float conf_threshold, float nms_threshold,
+                          int num_classes);
 
 /**
  * 对图像帧执行推理

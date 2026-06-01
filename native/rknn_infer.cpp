@@ -65,6 +65,7 @@ struct Worker {
 
 struct RknnEngine {
     int input_size;
+    int num_classes;
     float conf_threshold;
     float nms_threshold;
     std::vector<Worker> workers;
@@ -132,9 +133,11 @@ static int init_worker(Worker* w, unsigned char* model_data, int model_size, int
 }
 
 void* rknn_engine_create(const char* model_path, int input_size,
-                          float conf_threshold, float nms_threshold) {
+                          float conf_threshold, float nms_threshold,
+                          int num_classes) {
     RknnEngine* eng = new RknnEngine();
     eng->input_size = input_size;
+    eng->num_classes = num_classes;
     eng->conf_threshold = conf_threshold;
     eng->nms_threshold = nms_threshold;
 
@@ -238,7 +241,7 @@ int rknn_engine_infer(void* engine, const uint8_t* img_data,
                     continue;
 
                 float max_score = 0;
-                for (int c = 0; c < NUM_CLASSES; c++) {
+                for (int c = 0; c < eng->num_classes; c++) {
                     float s = score_data[offset];
                     if (s > eng->conf_threshold && s > max_score) {
                         max_score = s;

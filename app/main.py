@@ -366,6 +366,7 @@ def run_pipeline(args: argparse.Namespace) -> None:
             settings.conf_threshold,
             settings.nms_threshold,
             settings.input_size,
+            num_classes=len(settings.class_names),
         )
     elif settings.npu_threads > 1:
         from app.infer.multi_process import MultiProcessEngine

@@ -46,6 +46,7 @@ class NativeInferenceEngine:
         nms_threshold: float = 0.45,
         input_size: int = 640,
         n_workers: int = 3,
+        num_classes: int = 80,
     ) -> None:
         self.model_path = model_path
         self.class_names = list(class_names)
@@ -53,6 +54,7 @@ class NativeInferenceEngine:
         self.nms_threshold = nms_threshold
         self.input_size = input_size
         self.n_workers = n_workers
+        self.num_classes = num_classes
         self._engine = None
         self._lib = None
         self._stub_mode = False
@@ -70,7 +72,8 @@ class NativeInferenceEngine:
 
         self._lib.rknn_engine_create.restype = ctypes.c_void_p
         self._lib.rknn_engine_create.argtypes = [
-            ctypes.c_char_p, ctypes.c_int, ctypes.c_float, ctypes.c_float
+            ctypes.c_char_p, ctypes.c_int, ctypes.c_float, ctypes.c_float,
+            ctypes.c_int,
         ]
 
         self._lib.rknn_engine_infer.restype = ctypes.c_int
@@ -88,6 +91,7 @@ class NativeInferenceEngine:
             self.input_size,
             self.conf_threshold,
             self.nms_threshold,
+            self.num_classes,
         )
 
         if not self._engine:
