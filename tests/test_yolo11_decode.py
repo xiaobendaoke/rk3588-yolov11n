@@ -31,25 +31,16 @@ def test_yolo11_decode():
     outputs[1][0, 5, 40, 40] = 0.8  # class 5 with high confidence
     outputs[1][0, 10, 20, 20] = 0.6  # class 10
 
-    print("Testing YOLO11 format detection (9 outputs)...")
     result = engine._try_decode_yolo11(outputs, ts_ms=1000)
-
-    if result is not None:
-        print(f"SUCCESS: Detected YOLO11 format, got {len(result)} detections")
-        for det in result[:5]:
-            print(f"  - {det.class_name}: conf={det.conf:.3f}, bbox={det.bbox_xyxy}")
-    else:
-        print("FAIL: YOLO11 format not detected")
+    assert result is not None, "YOLO11 format should be detected with 9 outputs"
+    assert len(result) > 0, "Should get at least one detection from injected strong signal"
+    for det in result:
+        assert det.conf > 0, f"Detection confidence should be positive, got {det.conf}"
+        assert len(det.bbox_xyxy) == 4, "bbox_xyxy should have 4 elements"
 
     # Test with 3 outputs (should return None)
-    print("\nTesting with 3 outputs (should return None)...")
     result2 = engine._try_decode_yolo11(outputs[:3], ts_ms=1000)
-    if result2 is None:
-        print("SUCCESS: Correctly returned None for 3-output format")
-    else:
-        print("FAIL: Should have returned None")
-
-    return 0
+    assert result2 is None, "Should return None for 3-output format"
 
 
 if __name__ == "__main__":
