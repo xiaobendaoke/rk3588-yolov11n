@@ -33,7 +33,6 @@ def _engine(hold=1, cooldown=0):
             risk_distance_px=120,
             risk_hold_frames=hold,
             event_cooldown_sec=cooldown,
-            danger_roi=(430, 260, 640, 640),
             dense_count_threshold=4,
             dense_iou_sum_threshold=1.2,
         )
@@ -53,7 +52,7 @@ def test_liquid_near_electronics_trigger():
 
 
 def test_sharp_tool_roi_trigger():
-    """测试剪刀在危险区域内时触发尖锐工具误放规则。"""
+    """测试尖锐物品出现在桌面上时触发尖锐工具误放规则。"""
     e = _engine()
     ds = [_d(1, 3, 0.9, (500, 400, 580, 500))]
     out = e.evaluate(ds)

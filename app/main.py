@@ -569,7 +569,6 @@ def run_pipeline(args: argparse.Namespace) -> None:
             risk_distance_px=settings.risk_distance_px,
             risk_hold_frames=settings.risk_hold_frames,
             event_cooldown_sec=settings.event_cooldown_sec,
-            danger_roi=tuple(settings.danger_roi),
             dense_count_threshold=settings.dense_count_threshold,
             dense_iou_sum_threshold=settings.dense_iou_sum_threshold,
         )

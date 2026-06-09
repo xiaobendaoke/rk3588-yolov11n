@@ -27,7 +27,6 @@ class Settings:
         risk_distance_px: 液体-设备接近风险的像素距离阈值。
         risk_hold_frames: 确认风险所需的连续帧数。
         event_cooldown_sec: 同类型风险事件的最小间隔秒数。
-        danger_roi: 尖锐工具检测的危险区域 [x1, y1, x2, y2]。
         dense_count_threshold: 桌面拥挤风险的目标数量阈值。
         dense_iou_sum_threshold: 桌面拥挤风险的 IoU 总和阈值。
         snapshot_root: 事件快照保存的根目录。
@@ -51,7 +50,6 @@ class Settings:
     risk_distance_px: int
     risk_hold_frames: int
     event_cooldown_sec: int
-    danger_roi: List[int]
     dense_count_threshold: int
     dense_iou_sum_threshold: float
     snapshot_root: str
@@ -93,7 +91,6 @@ def load_settings(config_path: str) -> Settings:
         risk_distance_px=int(raw["risk_distance_px"]),
         risk_hold_frames=int(raw["risk_hold_frames"]),
         event_cooldown_sec=int(raw["event_cooldown_sec"]),
-        danger_roi=list(raw["danger_roi"]),
         dense_count_threshold=int(raw["dense_count_threshold"]),
         dense_iou_sum_threshold=float(raw["dense_iou_sum_threshold"]),
         snapshot_root=raw["snapshot_root"],

@@ -17,7 +17,6 @@ class RuleConfig:
         risk_distance_px: 液体-设备接近检测的最大像素距离。
         risk_hold_frames: 风险触发前需要持续的连续帧数。
         event_cooldown_sec: 同类型风险事件之间的最小间隔秒数。
-        danger_roi: 尖锐工具误放检测的危险区域 (x1, y1, x2, y2)。
         dense_count_threshold: 判定桌面拥挤的目标数量阈值。
         dense_iou_sum_threshold: 判定桌面拥挤的 IoU 总和阈值。
     """
@@ -25,7 +24,6 @@ class RuleConfig:
     risk_distance_px: int
     risk_hold_frames: int
     event_cooldown_sec: int
-    danger_roi: Tuple[int, int, int, int]
     dense_count_threshold: int
     dense_iou_sum_threshold: float
 
@@ -135,31 +133,28 @@ class RuleEngine:
         )
 
     def _check_sharp_tool_misplaced(self, ds: List[Detection]) -> RiskEventCandidate | None:
-        """检查是否有剪刀在配置的危险区域内。
+        """检查是否有尖锐物品出现在桌面上。
 
         Args:
             ds: 当前帧中的检测目标列表。
 
         Returns:
-            如果在危险区域发现剪刀，返回 RiskEventCandidate，否则返回 None。
+            如果发现尖锐物品（剪刀、刀、美工刀），返回 RiskEventCandidate，否则返回 None。
         """
-        scissors = [d for d in ds if d.class_name == "scissors"]
-        if not scissors:
+        sharp_tools = [d for d in ds if d.class_name in {"scissors", "knife", "cutter"}]
+        if not sharp_tools:
             return None
 
-        x1, y1, x2, y2 = self.cfg.danger_roi
-        for s in scissors:
-            cx, cy = _center(s.bbox_xyxy)
-            if x1 <= cx <= x2 and y1 <= cy <= y2:
-                return RiskEventCandidate(
-                    ts_ms=s.ts_ms,
-                    risk_type="sharp_tool_misplaced",
-                    severity="high",
-                    confidence=float(s.conf),
-                    reason="scissors detected in configured danger ROI",
-                    objects=[s],
-                )
-        return None
+        # 返回置信度最高的尖锐物品
+        tool = max(sharp_tools, key=lambda d: d.conf)
+        return RiskEventCandidate(
+            ts_ms=tool.ts_ms,
+            risk_type="sharp_tool_misplaced",
+            severity="high",
+            confidence=float(tool.conf),
+            reason=f"{tool.class_name} detected on desk",
+            objects=[tool],
+        )
 
     def _check_desk_overcrowded(self, ds: List[Detection]) -> RiskEventCandidate | None:
         """根据目标数量或 IoU 总和检查桌面是否拥挤。

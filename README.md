@@ -350,7 +350,6 @@ rknn_set_core_mask(ctx, (rknn_core_mask)core_mask);
 | `risk_distance_px` | int | `120` | 液体-设备接近风险距离（像素） |
 | `risk_hold_frames` | int | `5` | 风险确认所需连续帧数 |
 | `event_cooldown_sec` | int | `8` | 同类事件最小间隔（秒） |
-| `danger_roi` | list | `[430,260,640,640]` | 危险区域 [x1,y1,x2,y2] |
 | `use_native` | bool | `true` | 使用 C++ 推理引擎 |
 | `pipeline_enabled` | bool | `true` | 启用双缓冲流水线 |
 | `web_host` | string | `0.0.0.0` | Web 服务绑定地址 |

@@ -98,8 +98,6 @@ risk_distance_px: 120
 risk_hold_frames: 5
 event_cooldown_sec: 8
 
-# [x1, y1, x2, y2] in resized inference frame coordinates
-danger_roi: [430, 260, 640, 640]
 dense_count_threshold: 4
 dense_iou_sum_threshold: 1.2
 
