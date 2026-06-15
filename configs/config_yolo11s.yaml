@@ -95,7 +95,7 @@ conf_threshold: 0.25
 nms_threshold: 0.45
 
 risk_distance_px: 120
-risk_hold_frames: 5
+risk_hold_frames: 2
 event_cooldown_sec: 8
 
 dense_count_threshold: 4
