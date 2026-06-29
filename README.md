@@ -33,7 +33,7 @@ rk3588-yolov11n 是一个运行在 RK3588 开发板上的实时桌面安全监�
 系统内置 3 条安全规则，实时评估桌面安全状态：
 
 1. **液体靠近电子设备**：检测杯子/瓶子是否靠近手机、键盘、鼠标等电子设备
-2. **尖锐工具误放**：检测剪刀是否出现在配置的危险区域内
+2. **尖锐工具误放**：检测剪刀、刀、美工刀是否出现在桌面上
 3. **桌面物品拥挤**：检测桌面物品是否过于密集
 
 ### Web 实时监控
@@ -150,7 +150,7 @@ cp configs/config.example.yaml configs/config.yaml
 camera_device: /dev/video21
 
 # 模型文件路径
-model_path: ./models/yolo11n_desk_v4.rknn
+model_path: ./models/yolo11n_desk_v5.rknn
 
 # 检测类别（16类桌面物品）
 class_names:

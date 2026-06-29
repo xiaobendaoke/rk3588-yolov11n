@@ -104,7 +104,7 @@ class RuleEngine:
             如果杯子在 risk_distance_px 距离内靠近设备，返回 RiskEventCandidate，
             否则返回 None。
         """
-        cups = [d for d in ds if d.class_name == "cup"]
+        cups = [d for d in ds if d.class_name in {"cup", "bottle"}]
         devices = [d for d in ds if d.class_name in {"cell phone", "keyboard", "laptop", "monitor", "tablet", "mouse", "remote"}]
         if not cups or not devices:
             return None
