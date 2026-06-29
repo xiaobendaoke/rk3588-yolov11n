@@ -95,7 +95,7 @@ class RuleEngine:
         return candidates
 
     def _check_liquid_near_electronics(self, ds: List[Detection]) -> RiskEventCandidate | None:
-        """检查是否有杯子离电子设备（手机、键盘）太近。
+        """检查是否有杯子离电子设备太近。
 
         Args:
             ds: 当前帧中的检测目标列表。
@@ -105,7 +105,7 @@ class RuleEngine:
             否则返回 None。
         """
         cups = [d for d in ds if d.class_name == "cup"]
-        devices = [d for d in ds if d.class_name in {"cell phone", "keyboard"}]
+        devices = [d for d in ds if d.class_name in {"cell phone", "keyboard", "laptop", "monitor", "tablet", "mouse", "remote"}]
         if not cups or not devices:
             return None
 
